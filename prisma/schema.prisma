@@ -1,0 +1,224 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Core domain models
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  orders    Order[]
+  products  Product[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Site {
+  id        String           @id @default(uuid())
+  name      String
+  lines     ProductionLine[]
+  plans     Plan[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model ProductionLine {
+  id                 String            @id @default(uuid())
+  name               String
+  siteId             String
+  site               Site              @relation(fields: [siteId], references: [id])
+  masterRunRates     MasterRunRate[]
+  specificRunRates   SpecificRunRate[]
+  planItems          PlanItem[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([siteId])
+}
+
+model PunnetSize {
+  id                      String             @id @default(uuid())
+  name                    String
+  sizeGrams               Int?
+  products                Product[]
+  masterRunRates          MasterRunRate[]
+  fromMasterChangeovers   MasterChangeover[] @relation("MasterChangeoverFrom")
+  toMasterChangeovers     MasterChangeover[] @relation("MasterChangeoverTo")
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+}
+
+model Fruit {
+  id       String         @id @default(uuid())
+  name     String
+  variants FruitVariant[]
+}
+
+model FruitVariant {
+  id           String          @id @default(uuid())
+  name         String
+  fruitId      String
+  fruit        Fruit           @relation(fields: [fruitId], references: [id])
+  products     ProductVariety[]
+
+  @@index([fruitId])
+}
+
+model Product {
+  id                         String                 @id @default(uuid())
+  name                       String
+  customerId                 String
+  customer                   Customer               @relation(fields: [customerId], references: [id])
+  punnetSizeId               String
+  punnetSize                 PunnetSize             @relation(fields: [punnetSizeId], references: [id])
+  multiType                  Boolean                @default(false)
+  orders                     Order[]
+  varieties                  ProductVariety[]
+  specificRunRates           SpecificRunRate[]
+  fromSpecificChangeovers    SpecificChangeover[]   @relation("SpecificChangeoverFrom")
+  toSpecificChangeovers      SpecificChangeover[]   @relation("SpecificChangeoverTo")
+  createdAt                  DateTime               @default(now())
+  updatedAt                  DateTime               @updatedAt
+
+  @@index([customerId])
+  @@index([punnetSizeId])
+}
+
+model Order {
+  id            String     @id @default(uuid())
+  customerId    String
+  customer      Customer   @relation(fields: [customerId], references: [id])
+  productId     String
+  product       Product    @relation(fields: [productId], references: [id])
+  quantityPacks Int
+  dueAt         DateTime?
+  status        String?
+  planItems     PlanItem[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([customerId])
+  @@index([productId])
+}
+
+// Junctions & matrices
+model MasterRunRate {
+  id            String          @id @default(uuid())
+  punnetSizeId  String
+  lineId        String
+  punnetSize    PunnetSize      @relation(fields: [punnetSizeId], references: [id])
+  line          ProductionLine  @relation(fields: [lineId], references: [id])
+  packsPerMinute Float
+
+  @@unique([punnetSizeId, lineId])
+}
+
+model SpecificRunRate {
+  id            String          @id @default(uuid())
+  productId     String
+  lineId        String
+  product       Product         @relation(fields: [productId], references: [id])
+  line          ProductionLine  @relation(fields: [lineId], references: [id])
+  packsPerMinute Float
+
+  @@unique([productId, lineId])
+}
+
+model MasterChangeover {
+  id                 String      @id @default(uuid())
+  fromPunnetSizeId   String
+  toPunnetSizeId     String
+  fromPunnetSize     PunnetSize  @relation("MasterChangeoverFrom", fields: [fromPunnetSizeId], references: [id])
+  toPunnetSize       PunnetSize  @relation("MasterChangeoverTo", fields: [toPunnetSizeId], references: [id])
+  minutes            Int
+
+  @@unique([fromPunnetSizeId, toPunnetSizeId])
+}
+
+model SpecificChangeover {
+  id            String    @id @default(uuid())
+  fromProductId String
+  toProductId   String
+  fromProduct   Product   @relation("SpecificChangeoverFrom", fields: [fromProductId], references: [id])
+  toProduct     Product   @relation("SpecificChangeoverTo", fields: [toProductId], references: [id])
+  minutes       Int
+
+  @@unique([fromProductId, toProductId])
+}
+
+model ProductVariety {
+  id             String        @id @default(uuid())
+  productId      String
+  fruitVariantId String
+  preferred      Boolean       @default(false)
+  product        Product       @relation(fields: [productId], references: [id])
+  fruitVariant   FruitVariant  @relation(fields: [fruitVariantId], references: [id])
+
+  @@unique([productId, fruitVariantId])
+}
+
+// Planning persistence (proposal)
+enum PlanItemKind {
+  PLANNED
+  ACTUAL
+}
+
+enum PlanItemStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETE
+  CANCELED
+}
+
+model Plan {
+  id        String     @id @default(uuid())
+  planDate  DateTime
+  siteId    String?
+  site      Site?      @relation(fields: [siteId], references: [id])
+  items     PlanItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([siteId])
+  @@index([planDate])
+}
+
+model PlanItem {
+  id                 String           @id @default(uuid())
+  planId             String
+  plan               Plan             @relation(fields: [planId], references: [id])
+  orderId            String
+  order              Order            @relation(fields: [orderId], references: [id])
+  productionLineId   String
+  productionLine     ProductionLine   @relation(fields: [productionLineId], references: [id])
+  kind               PlanItemKind
+  status             PlanItemStatus   @default(SCHEDULED)
+  startAt            DateTime
+  endAt              DateTime
+  setupMinutes       Int
+  runMinutes         Int
+
+  // Link to previous item on the same line/day to aid changeover calculations
+  previousItemId     String?
+  previousItem       PlanItem?        @relation("PrevItem", fields: [previousItemId], references: [id])
+  nextItems          PlanItem[]       @relation("PrevItem")
+
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([planId])
+  @@index([orderId])
+  @@index([productionLineId])
+  @@index([startAt])
+}
