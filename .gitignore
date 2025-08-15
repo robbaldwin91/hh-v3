@@ -44,3 +44,5 @@ next-env.d.ts
 
 # Embedded database files
 .postgres-data/
+
+.vercel
